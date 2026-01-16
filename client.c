@@ -22,45 +22,45 @@ void print_header() {
 }
 
 void print_board_pretty(char *boardStr) {
+    if (boardStr == NULL || strlen(boardStr) == 0) return;
+
+    // The server sends the board as a single string, likely row by row.
+    // Example expectation: " | | | | | \n | | | | | \n..." 
+    // We will clean it up and print with borders.
+
     printf("\n    0   1   2   3   4   5\n");
     printf("  +---+---+---+---+---+---+\n");
     
+    char *line_ctx;
+    char *line = strtok_r(boardStr, "\n", &line_ctx); // Use thread-safe strtok_r if available, or just strtok
     int row = 0;
-    char *line = strtok(boardStr, "\n");
-    while(line != NULL) {
+
+    while(line != NULL && row < BOARD_SIZE) {
         printf("%d |", row);
         
-        // The server sends "X| | |O|...". We parse it.
-        // Or simpler, just print what server sends if it's pre-formatted?
-        // Our server sends crude "X| |". Let's parse or just print elegantly.
-        // Server sends: "c|c|c|c|c|c|"
-        
-        for(int i=0; i<strlen(line); i++) {
-            if(line[i] == '|') printf(" %c |", line[i-1]); 
-            // This relies on specific server format "C|"
-        }
-        // Correct approach: Just print char by char based on server msg structure
-        // But for robustness, let's assume server sends "Row\n"
-        // Let's just trust the server's visual format for now, but Member 4 should parse.
-        // Since I wrote the server to send "C|C|...", let's assume we just display it.
-        
-        // Actually, let's interpret the string for better UI
-        // Server format: "C|C|C|C|C|C|\n" repeated 6 times.
+        // Iterate through the line string. 
+        // Expected format per cell: "C|" where C is 'X', 'O' or ' '
+        // We will just print characters that are not separators nicely.
         
         int col = 0;
         int len = strlen(line);
         for(int i=0; i<len; i++) {
-             if (line[i] != '|') {
-                 char c = line[i];
-                 if (c == ' ') printf("   |");
-                 else printf(" %c |", c);
-                 col++;
-             }
+             // Skip existing pipes in the string to draw our own consistent ones
+             if (line[i] == '|') continue;
+             
+             printf(" %c |", line[i]);
+             col++;
         }
         
+        // Fill remaining columns if line was short (safety)
+        while (col < BOARD_SIZE) {
+            printf("   |");
+            col++;
+        }
+
         printf("\n  +---+---+---+---+---+---+\n");
         row++;
-        line = strtok(NULL, "\n");
+        line = strtok_r(NULL, "\n", &line_ctx);
     }
 }
 
@@ -92,26 +92,65 @@ int main(int argc, char *argv[]) {
     printf("[*] Connected!\n");
 
     // 1. Handshake
+    printf("[Debug] Waiting for WELCOME from server...\n");
     memset(buffer, 0, BUFFER_SIZE);
-    read(sock_fd, buffer, BUFFER_SIZE);
+    int n = read(sock_fd, buffer, BUFFER_SIZE);
+    if (n < 0) perror("[Debug] Read failed");
+    else printf("[Debug] Received %d bytes: %s\n", n, buffer);
     // Server says "WELCOME"
     
     // 2. Send Name
-    char name[32];
-    printf("\nENTER YOUR NAME: ");
+    if (strncmp(buffer, "WELCOME", 7) == 0) {
+        char name[32];
+        printf("\nENTER YOUR NAME: ");
     scanf("%s", name);
     send(sock_fd, name, strlen(name), 0);
+    } // End of WELCOME check
 
     printf("\n[*] Waiting for other players to join...\n");
     
     // Wait for START
     memset(buffer, 0, BUFFER_SIZE);
-    int n = read(sock_fd, buffer, BUFFER_SIZE); // Block until START
-    if (n > 0) printf("\n[!] GAME STARTED!\n");
+    n = read(sock_fd, buffer, BUFFER_SIZE); // Block until START
+    int your_turn_in_start = 0;  // Flag if YOUR_TURN came with START
+    if (n > 0) {
+        printf("\n[!] GAME STARTED!\n");
+        printf("[Debug] START buffer received (%d bytes): '%s'\n", n, buffer);
+        // Check if YOUR_TURN was concatenated with START
+        if (strstr(buffer, MSG_YOUR_TURN)) {
+            your_turn_in_start = 1;
+            printf("[Debug] YOUR_TURN was received with START!\n");
+        }
+    }
+
+    int waiting_message_shown = 0;
 
     while (1) {
-        memset(buffer, 0, BUFFER_SIZE);
-        int valread = read(sock_fd, buffer, BUFFER_SIZE);
+        int valread = 0;
+        
+        // If YOUR_TURN came with START, skip reading and process it
+        if (your_turn_in_start) {
+            your_turn_in_start = 0;  // Clear flag
+            waiting_message_shown = 0;
+            // Buffer already contains YOUR_TURN from the START read
+            // We need to fake valread > 0 to enter the processing
+            valread = 1;  // Non-zero to pass the check
+            // Buffer still has content from the START message
+            strcpy(buffer, MSG_YOUR_TURN);  // Set buffer to YOUR_TURN for processing
+        } else {
+            if (!waiting_message_shown) {
+                printf("\n[*] Waiting for turn/update...\n");
+                waiting_message_shown = 1;
+            }
+
+            memset(buffer, 0, BUFFER_SIZE);
+            valread = read(sock_fd, buffer, BUFFER_SIZE);
+            // Only print debug for non-PING messages to keep output clean
+            if (strstr(buffer, "PING") == NULL) {
+                printf("[Debug] Received %d bytes: '%s'\n", valread, buffer);
+            }
+        }
+        
         if (valread <= 0) {
             printf("\n[!] Disconnected from server.\n");
             break;
@@ -133,6 +172,7 @@ int main(int argc, char *argv[]) {
             break;
         }
         else if (strstr(buffer, MSG_YOUR_TURN)) {
+            waiting_message_shown = 0; // Reset for next time
             clear_screen();
             print_header();
             printf("\n👉 YOUR TURN!\n");
@@ -146,31 +186,46 @@ int main(int argc, char *argv[]) {
 
             // Input Loop
             int r, c;
+            char inputLine[64];
             while(1) {
                 printf("\nEnter Move (Row Column): ");
-                if (scanf("%d %d", &r, &c) != 2) {
-                    while(getchar() != '\n'); // flush stdin
+                fflush(stdout);
+                
+                // Use fgets for more robust input handling
+                if (fgets(inputLine, sizeof(inputLine), stdin) == NULL) {
+                    continue;
+                }
+                
+                // Parse the input line
+                if (sscanf(inputLine, "%d %d", &r, &c) != 2) {
                     printf("Invalid input. Use format: ROW COL (e.g., 2 3)\n");
                     continue;
                 }
                 
                 // Send Move
-                char move[32];
-                snprintf(move, 32, "%d %d", r, c);
-                send(sock_fd, move, strlen(move), 0);
+                char moveStr[32];
+                sprintf(moveStr, "%d %d", r, c);
+                send(sock_fd, moveStr, strlen(moveStr), 0);
                 
                 // Wait for Validity Response
                 memset(buffer, 0, BUFFER_SIZE);
                 read(sock_fd, buffer, BUFFER_SIZE);
-                if (strstr(buffer, MSG_VALID_MOVE)) {
-                     printf("move accepted...\n");
+                // Check INVALID first since "INVALID" contains "VALID" as substring!
+                if (strstr(buffer, MSG_INVALID_MOVE)) {
+                     printf("Invalid move! Try again.\n");
+                } else if (strstr(buffer, MSG_VALID_MOVE)) {
+                     printf("Valid move!\n");
                      break; 
                 } else {
-                     printf("❌ Invalid move! Spot taken or out of bounds. Try again.\n");
+                     printf("Unknown response: %s\n", buffer);
                 }
             }
             
             printf("Waiting for other players...\n");
+        }
+        else if (strstr(buffer, "PING")) {
+            // Keep-alive message, ignore
+            continue;
         }
     }
 

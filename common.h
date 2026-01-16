@@ -62,6 +62,12 @@ typedef struct {
     int count;
 } LogQueue;
 
+// Score Database Entry
+typedef struct {
+    char name[32];
+    int wins;
+} ScoreEntry;
+
 // Main Shared Memory Structure
 typedef struct {
     // Game State
@@ -75,7 +81,7 @@ typedef struct {
     int winner_id;          // -1 if none/draw
 
     // Synchronization
-    pthread_mutex_t game_mutex;      // Protects Board & Game State
+    pthread_mutex_t game_mutex;      // Protects Board & Game State & Scores
     pthread_mutex_t log_mutex;       // Protects Log Queue
     sem_t turn_sem[MAX_PLAYERS];     // Signal specific player to move
     sem_t sched_sem;                 // Signal scheduler that move is done
@@ -83,6 +89,10 @@ typedef struct {
     // Logging
     LogQueue log_queue;
     int stop_threads;                // Flag to stop logger/scheduler on exit
+
+    // Persistence (Member 4)
+    ScoreEntry high_scores[100];     // Cache for scores
+    int num_scores;
 
 } SharedState;
 
