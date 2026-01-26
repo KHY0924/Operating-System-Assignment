@@ -584,6 +584,9 @@ void handle_client(int socket_fd, int player_id) {
                  break; // Exit loop immediately
             }
             pthread_mutex_unlock(&shm_ptr->game_mutex);
+            
+            // FIX: Continue to wait for next turn, don't fall through!
+            continue;
         } else if (result == -1 && errno == ETIMEDOUT) {
              // TIMEOUT Case:
              // 1. Check Game Over FIRST (Crucial for losers waiting)
