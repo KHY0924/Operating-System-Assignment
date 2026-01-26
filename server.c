@@ -584,9 +584,7 @@ void handle_client(int socket_fd, int player_id) {
                  break; // Exit loop immediately
             }
             pthread_mutex_unlock(&shm_ptr->game_mutex);
-            
-            // FIX: Continue to wait for next turn, don't fall through!
-            continue;
+            continue;  // 必须加这行！防止穿透到下面的 YOUR_TURN 代码
         } else if (result == -1 && errno == ETIMEDOUT) {
              // TIMEOUT Case:
              // 1. Check Game Over FIRST (Crucial for losers waiting)
@@ -618,14 +616,9 @@ void handle_client(int socket_fd, int player_id) {
             }
             */
             continue;
-        } else {
-            // Error case - unexpected sem_timedwait result
-            continue;
         }
 
-        // NOTE: The code below should NEVER be reached because all cases above
-        // either 'break', 'continue', or are enclosed in their own handling.
-        // If we reach here, it IS our turn!
+        // It IS our turn!
         send(socket_fd, MSG_YOUR_TURN, strlen(MSG_YOUR_TURN), 0);
         usleep(100000); // 100ms delay before sending board
         // Send Board
