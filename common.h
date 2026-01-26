@@ -24,7 +24,7 @@
 #define MAX_PLAYERS 5
 #define MIN_PLAYERS 3
 #define BOARD_SIZE 6
-#define WIN_LEN 4
+#define WIN_LEN 4 // Standard Rule
 #define SHM_NAME "/game_shm_v3"
 #define LOG_QUEUE_SIZE 100
 #define LOG_MSG_LEN 256

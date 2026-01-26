@@ -1,17 +1,9 @@
-[2026-01-17 03:04:54] PERSISTENCE: Loaded 0 scores.
-[2026-01-17 03:05:26] Player joined
-[2026-01-17 03:05:33] Player joined
-[2026-01-17 03:06:08] SCHEDULER: Minimum players met. Starting new game in 1 second...
-[2026-01-17 03:06:09] SCHEDULER: Game Started!
-[2026-01-17 03:06:11] Player joined
-[2026-01-17 03:06:19] MOVE: Player kee placed X at 0,0
-[2026-01-17 03:06:28] MOVE: Player kim placed O at 5,3
-[2026-01-17 03:06:35] MOVE: Player jax placed # at 2,3
-[2026-01-17 03:06:47] MOVE: Player kee placed X at 0,1
-[2026-01-17 03:06:54] MOVE: Player kim placed O at 2,5
-[2026-01-17 03:07:00] MOVE: Player jax placed # at 4,3
-[2026-01-17 03:07:08] MOVE: Player kee placed X at 0,2
-[2026-01-17 03:07:15] MOVE: Player kim placed O at 3,2
-[2026-01-17 03:07:23] MOVE: Player jax placed # at 1,2
-[2026-01-17 03:07:31] MOVE: Player kee placed X at 0,3
-[2026-01-17 03:07:31] GAME: We have a winner!
+[2026-01-27 00:55:02] PERSISTENCE: Loaded 3 scores.
+[2026-01-27 00:55:19] SCHEDULER: Minimum players met. Waiting 15s for others...
+[2026-01-27 00:55:22] Player joined
+[2026-01-27 00:55:25] Player joined
+[2026-01-27 00:55:28] Player joined
+[2026-01-27 00:55:34] SCHEDULER: Game Started!
+[2026-01-27 00:55:40] MOVE: Player j placed X at 0,0
+[2026-01-27 00:55:45] MOVE: Player y placed O at 2,5
+[2026-01-27 00:55:54] MOVE: Player t placed # at 5,5

@@ -123,7 +123,7 @@ void load_scores() {
 void save_score(const char *player_name, int add_win) {
     if (!shm_ptr || !player_name) return;
 
-    pthread_mutex_lock(&shm_ptr->game_mutex);
+    // NOTE: Mutex Removed here to prevent deadlock (Caller must hold lock!)
 
     int found = 0;
     for (int i = 0; i < shm_ptr->num_scores; i++) {
@@ -140,17 +140,24 @@ void save_score(const char *player_name, int add_win) {
         shm_ptr->num_scores++;
     }
 
+    if (shm_ptr->num_scores == 0) {
+        printf("[Score Debug] Warning: No scores to save (num_scores=0). Skipping write to prevent data loss.\n");
+        return;
+    }
+
     FILE *fp = fopen("scores.txt", "w");
     if (fp) {
         for (int i = 0; i < shm_ptr->num_scores; i++) {
             fprintf(fp, "%s %d\n", shm_ptr->high_scores[i].name, shm_ptr->high_scores[i].wins);
         }
         fclose(fp);
+        printf("[Score Debug] Successfully wrote %d scores to scores.txt\n", shm_ptr->num_scores);
+    } else {
+        perror("[Score Debug] Failed to open scores.txt for writing");
     }
-    pthread_mutex_unlock(&shm_ptr->game_mutex);
-
+    
     char logMsg[128];
-    snprintf(logMsg, 128, "PERSISTENCE: Saved score for %s.", player_name);
+    snprintf(logMsg, 128, "PERSISTENCE: Saved score for %s. Total scores in memory: %d", player_name, shm_ptr->num_scores);
     enqueue_log(logMsg);
 }
 
@@ -250,8 +257,14 @@ void *scheduler_thread_func(void *arg) {
             // Wait for minimum players
             if (connected >= MIN_PLAYERS) {
                 // Try to start game if not started
-                enqueue_log("SCHEDULER: Minimum players met. Starting new game in 1 second...");
-                sleep(1); 
+                // FIX: Give more time for 4th/5th players to join!
+                if (connected < MAX_PLAYERS) {
+                    printf("[Scheduler] Minimum players met. Waiting 15s for others to join...\n");
+                    enqueue_log("SCHEDULER: Minimum players met. Waiting 15s for others...");
+                    sleep(15); 
+                } else {
+                    enqueue_log("SCHEDULER: Max players reached. Starting immediately!");
+                } 
                 
                 pthread_mutex_lock(&shm_ptr->game_mutex);
                 shm_ptr->game_started = 1;
@@ -311,7 +324,7 @@ void *scheduler_thread_func(void *arg) {
         // Signal Player to Move
         sem_post(&shm_ptr->turn_sem[current]);
 
-        // Wait for Move Completion
+        // Wait for Move Completion (Infinite Wait)
         sem_wait(&shm_ptr->sched_sem);
 
         // Check Win/Draw conditions after move
@@ -337,12 +350,18 @@ void *scheduler_thread_func(void *arg) {
         }
         pthread_mutex_unlock(&shm_ptr->game_mutex);
 
+
+
         if (shm_ptr->game_over) {
+            // FIX: Add delay to prevent "WIN" message sticking to "VALID" message
+            usleep(200000); // 0.2 seconds delay
+
             // Signal all players to wake up and check game_over
             for (int i = 0; i < shm_ptr->num_players; i++) {
                 sem_post(&shm_ptr->turn_sem[i]);
             }
             // Give clients time to receive and display the WIN/LOSE message
+            printf("[Scheduler] Game Over! Waiting 5s for clients to finish...\n");
             sleep(5);
             reset_game();
         }
@@ -447,6 +466,7 @@ void handle_client(int socket_fd, int player_id) {
         
         if (over) {
             if (winner == player_id) {
+                // printf("[Game Debug] Sending WIN to Player %d...\n", player_id); fflush(stdout);
                 printf("[Game] Player %d (%s) WINS!\n", player_id, shm_ptr->players[player_id].name); fflush(stdout);
                 send(socket_fd, MSG_WIN, strlen(MSG_WIN), 0);
             }
@@ -462,9 +482,130 @@ void handle_client(int socket_fd, int player_id) {
         }
         
         if (result == 0) {
-            // It's our turn - proceed to send YOUR_TURN
+            // It's our turn OR Game Over signal from scheduler
+            
+            // FIX: Check Game Over even if we got the semaphore!
+            pthread_mutex_lock(&shm_ptr->game_mutex);
+            if (shm_ptr->game_over) {
+                 int winner = shm_ptr->winner_id;
+                 pthread_mutex_unlock(&shm_ptr->game_mutex);
+                 
+                 // Send corresponding message
+                 if (winner == player_id) {
+                     send(socket_fd, MSG_WIN, strlen(MSG_WIN), 0);
+                 } else if (winner == -1) {
+                     send(socket_fd, MSG_DRAW, strlen(MSG_DRAW), 0);
+                 } else {
+                     send(socket_fd, MSG_LOSE, strlen(MSG_LOSE), 0);
+                 }
+                 break; // Exit loop
+            }
+            pthread_mutex_unlock(&shm_ptr->game_mutex);
+
+            // If not game over, proceed to send YOUR_TURN
+            
+            // It IS our turn!
+            send(socket_fd, MSG_YOUR_TURN, strlen(MSG_YOUR_TURN), 0);
+            usleep(100000); // 100ms delay before sending board
+            // Send Board
+            char boardStr[BOARD_SIZE * BOARD_SIZE + BOARD_SIZE + 1]; // Rows + newlines
+            int pos = 0;
+            pthread_mutex_lock(&shm_ptr->game_mutex);
+            for(int r=0; r<BOARD_SIZE; r++) {
+                for(int c=0; c<BOARD_SIZE; c++) {
+                    boardStr[pos++] = shm_ptr->board[r][c];
+                }
+                boardStr[pos++] = '\n';
+            }
+            boardStr[pos] = '\0';
+            pthread_mutex_unlock(&shm_ptr->game_mutex);
+            sleep(1); 
+            send(socket_fd, boardStr, strlen(boardStr), 0);
+
+            // Receive Move
+            int valid = 0;
+            int dropped = 0;
+            while (!valid) {
+                memset(buffer, 0, BUFFER_SIZE);
+                if (read(socket_fd, buffer, BUFFER_SIZE) <= 0) {
+                     enqueue_log("DISCONNECT: Client dropped during turn.");
+                     
+                     // Restore Drop Logic
+                     pthread_mutex_lock(&shm_ptr->game_mutex);
+                     shm_ptr->players[player_id].active = 0;
+                     if (shm_ptr->num_connected > 0) shm_ptr->num_connected--; // Decrement connected count
+                     pthread_mutex_unlock(&shm_ptr->game_mutex);
+                     
+                     sem_post(&shm_ptr->sched_sem); // Release scheduler
+                     dropped = 1;
+                     break;
+                }
+
+                // r/c parsing logic...
+                int r, c;
+                if (sscanf(buffer, "%d %d", &r, &c) == 2) {
+                    pthread_mutex_lock(&shm_ptr->game_mutex);
+                    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && shm_ptr->board[r][c] == ' ') {
+                        shm_ptr->board[r][c] = shm_ptr->players[player_id].symbol;
+                        valid = 1;
+                        char moveLog[64];
+                        snprintf(moveLog, 64, "MOVE: Player %s placed %c at %d,%d", shm_ptr->players[player_id].name, shm_ptr->players[player_id].symbol, r, c);
+                        printf("[Child %d] %s\n", player_id, moveLog); fflush(stdout);
+                        pthread_mutex_unlock(&shm_ptr->game_mutex); 
+                        enqueue_log(moveLog);
+                    } else {
+                        pthread_mutex_unlock(&shm_ptr->game_mutex);
+                    }
+                }
+
+                if (valid) send(socket_fd, MSG_VALID_MOVE, strlen(MSG_VALID_MOVE), 0);
+                else send(socket_fd, MSG_INVALID_MOVE, strlen(MSG_INVALID_MOVE), 0);
+            }
+
+            if (dropped) break; // Exit loop if dropped
+
+            // Notify Scheduler that move is done
+            sem_post(&shm_ptr->sched_sem);
+            
+            // FIX: Proactive Win Check - Do not wait for scheduler!
+            pthread_mutex_lock(&shm_ptr->game_mutex);
+            if (check_win(shm_ptr->players[player_id].symbol)) {
+                 // printf("[Game Debug] Child %d detected logic WIN proactively!\n", player_id); fflush(stdout);
+                 
+                 // We won! Set the state so scheduler knows too
+                 shm_ptr->winner_id = player_id;
+                 shm_ptr->game_over = 1;
+
+                 // printf("[Game Debug] Sending WIN to Player %d...\n", player_id); fflush(stdout);
+                 printf("[Game] Player %d (%s) WINS!\n", player_id, shm_ptr->players[player_id].name); fflush(stdout);
+                 send(socket_fd, MSG_WIN, strlen(MSG_WIN), 0);
+                 
+                 pthread_mutex_unlock(&shm_ptr->game_mutex);
+                 break; // Exit loop immediately
+            }
+            pthread_mutex_unlock(&shm_ptr->game_mutex);
         } else if (result == -1 && errno == ETIMEDOUT) {
-            // Timeout: Send PING to verify connection (game_over already checked above)
+             // TIMEOUT Case:
+             // 1. Check Game Over FIRST (Crucial for losers waiting)
+             pthread_mutex_lock(&shm_ptr->game_mutex);
+             if (shm_ptr->game_over) {
+                 int winner = shm_ptr->winner_id;
+                 pthread_mutex_unlock(&shm_ptr->game_mutex);
+                 
+                 // Send corresponding message
+                 if (winner == player_id) {
+                     send(socket_fd, MSG_WIN, strlen(MSG_WIN), 0);
+                 } else if (winner == -1) {
+                     send(socket_fd, MSG_DRAW, strlen(MSG_DRAW), 0);
+                 } else {
+                     send(socket_fd, MSG_LOSE, strlen(MSG_LOSE), 0);
+                 }
+                 break; // Exit loop
+             }
+             pthread_mutex_unlock(&shm_ptr->game_mutex);
+
+            // Timeout: Send PING... (Commented out)
+            /* 
             if (send(socket_fd, "PING", 4, MSG_NOSIGNAL) == -1) {
                  enqueue_log("DISCONNECT: Client lost.");
                  pthread_mutex_lock(&shm_ptr->game_mutex);
@@ -472,10 +613,16 @@ void handle_client(int socket_fd, int player_id) {
                  pthread_mutex_unlock(&shm_ptr->game_mutex);
                  break;
             }
+            */
+            continue;
+        } else {
+            // Error case - unexpected sem_timedwait result
             continue;
         }
 
-        // It IS our turn!
+        // NOTE: The code below should NEVER be reached because all cases above
+        // either 'break', 'continue', or are enclosed in their own handling.
+        // If we reach here, it IS our turn!
         send(socket_fd, MSG_YOUR_TURN, strlen(MSG_YOUR_TURN), 0);
         usleep(100000); // 100ms delay before sending board
         // Send Board
@@ -500,13 +647,39 @@ void handle_client(int socket_fd, int player_id) {
             memset(buffer, 0, BUFFER_SIZE);
             if (read(socket_fd, buffer, BUFFER_SIZE) <= 0) {
                  enqueue_log("DISCONNECT: Client dropped during turn.");
+                 
+                 // Restore Drop Logic
                  pthread_mutex_lock(&shm_ptr->game_mutex);
                  shm_ptr->players[player_id].active = 0;
+                 if (shm_ptr->num_connected > 0) shm_ptr->num_connected--; // Decrement connected count
                  pthread_mutex_unlock(&shm_ptr->game_mutex);
+                 
                  sem_post(&shm_ptr->sched_sem); // Release scheduler
                  dropped = 1;
                  break;
             }
+
+            // FIX: Handle Client-Reported TIMEOUT
+            if (strstr(buffer, "TIMEOUT")) {
+                 printf("[Child %d] Received Client TIMEOUT signal. Skipping move processing.\n", player_id);
+                 valid = 1; // Break input loop
+                 // Do not post sched_sem here, let the scheduler loop handle turn change
+                 continue; // Continue to end of loop/next iteration
+            }
+
+            // FIX: Check if we timed out (Scheduler Moved On?)
+            pthread_mutex_lock(&shm_ptr->game_mutex);
+            int current_turn = shm_ptr->turn_index;
+            pthread_mutex_unlock(&shm_ptr->game_mutex);
+
+            if (current_turn != player_id) {
+                 printf("[Child %d] Move rejected - TIMEOUT (Turn moved to %d)\n", player_id, current_turn);
+                 send(socket_fd, "*** TIMEOUT! Your turn was skipped. ***\n", 40, 0);
+                 valid = 1; // Break input loop but don't process move logic
+                 // Do NOT post sched_sem because scheduler already continued
+                 continue; // Loop back to semaphore wait (wait for next legitimate turn)
+            }
+            // End FIX
 
             int r, c;
             if (sscanf(buffer, "%d %d", &r, &c) == 2) {
@@ -532,10 +705,34 @@ void handle_client(int socket_fd, int player_id) {
 
         // Notify Scheduler that move is done
         sem_post(&shm_ptr->sched_sem);
+        
+        // FIX: Proactive Win Check - Do not wait for scheduler!
+        pthread_mutex_lock(&shm_ptr->game_mutex);
+        if (check_win(shm_ptr->players[player_id].symbol)) {
+             // printf("[Game Debug] Child %d detected logic WIN proactively!\n", player_id); fflush(stdout);
+             
+             // We won! Set the state so scheduler knows too
+             shm_ptr->winner_id = player_id;
+             shm_ptr->game_over = 1;
+
+             printf("[Game] Player %d (%s) WINS!\n", player_id, shm_ptr->players[player_id].name); fflush(stdout);
+             send(socket_fd, MSG_WIN, strlen(MSG_WIN), 0);
+             
+             pthread_mutex_unlock(&shm_ptr->game_mutex);
+             break; // Exit loop immediately
+        }
+        pthread_mutex_unlock(&shm_ptr->game_mutex);
     }
     
     close(socket_fd);
-    printf("Child Process for Player %d Exiting.\n", player_id);
+    
+    // FIX: Clean up player state on normal exit so new players can join
+    pthread_mutex_lock(&shm_ptr->game_mutex);
+    shm_ptr->players[player_id].active = 0;
+    if (shm_ptr->num_connected > 0) shm_ptr->num_connected--;
+    pthread_mutex_unlock(&shm_ptr->game_mutex);
+
+    printf("Child Process for Player %d Exiting. (Connected: %d)\n", player_id, shm_ptr->num_connected);
     exit(0);
 }
 

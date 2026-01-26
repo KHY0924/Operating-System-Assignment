@@ -145,10 +145,13 @@ int main(int argc, char *argv[]) {
 
             memset(buffer, 0, BUFFER_SIZE);
             valread = read(sock_fd, buffer, BUFFER_SIZE);
-            // Only print debug for non-PING messages to keep output clean
-            if (strstr(buffer, "PING") == NULL) {
-                printf("[Debug] Received %d bytes: '%s'\n", valread, buffer);
+            
+            // DEBUG: Print EVERYTHING received
+            /*
+            if (valread > 0) {
+                printf("[DEBUG RAW] Received %d bytes: '%s'\n", valread, buffer);
             }
+            */
         }
         
         if (valread <= 0) {
@@ -185,8 +188,10 @@ int main(int argc, char *argv[]) {
             print_board_pretty(buffer);
 
             // Input Loop
+            // Input Loop
             int r, c;
             char inputLine[64];
+            
             while(1) {
                 printf("\nEnter Move (Row Column): ");
                 fflush(stdout);
@@ -215,6 +220,21 @@ int main(int argc, char *argv[]) {
                      printf("Invalid move! Try again.\n");
                 } else if (strstr(buffer, MSG_VALID_MOVE)) {
                      printf("Valid move!\n");
+                     
+                     // FIX: Check if Game Over message came attached with VALID
+                     if (strstr(buffer, MSG_WIN)) {
+                         clear_screen();
+                         print_header();
+                         printf("\n\n    🏆 VICTORY! You won the game! 🏆\n\n");
+                         close(sock_fd);
+                         return 0;
+                     } 
+                     else if (strstr(buffer, MSG_DRAW)) {
+                         printf("\n\n    🤝 DRAW GAME. No winner. 🤝\n\n");
+                         close(sock_fd);
+                         return 0;
+                     }
+                     
                      break; 
                 } else {
                      printf("Unknown response: %s\n", buffer);
