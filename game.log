@@ -1,19 +1,27 @@
-[2026-01-27 01:00:24] PERSISTENCE: Loaded 3 scores.
-[2026-01-27 01:00:41] SCHEDULER: Minimum players met. Waiting 15s for others...
-[2026-01-27 01:00:45] Player joined
-[2026-01-27 01:00:48] Player joined
-[2026-01-27 01:00:51] Player joined
-[2026-01-27 01:00:56] SCHEDULER: Game Started!
-[2026-01-27 01:01:00] MOVE: Player h placed X at 0,0
-[2026-01-27 01:01:05] MOVE: Player q placed O at 3,2
-[2026-01-27 01:01:09] MOVE: Player d placed # at 2,2
-[2026-01-27 01:01:17] MOVE: Player h placed X at 0,1
-[2026-01-27 01:01:22] MOVE: Player q placed O at 5,5
-[2026-01-27 01:01:28] MOVE: Player d placed # at 4,4
-[2026-01-27 01:01:34] MOVE: Player h placed X at 0,2
-[2026-01-27 01:01:39] MOVE: Player q placed O at 5,1
-[2026-01-27 01:01:46] MOVE: Player d placed # at 2,5
-[2026-01-27 01:01:51] MOVE: Player h placed X at 0,3
-[2026-01-27 01:01:51] GAME: We have a winner!
-[2026-01-27 01:01:51] PERSISTENCE: Saved score for h. Total scores in memory: 4
-[2026-01-27 01:01:57] GAME: Board reset.
+[2026-01-27 01:04:53] PERSISTENCE: Loaded 4 scores.
+[2026-01-27 01:05:09] SCHEDULER: Minimum players met. Waiting 15s for others...
+[2026-01-27 01:05:21] Player joined
+[2026-01-27 01:05:24] SCHEDULER: Game Started!
+[2026-01-27 01:05:24] Player joined
+[2026-01-27 01:05:30] Player joined
+[2026-01-27 01:05:33] Player joined
+[2026-01-27 01:05:37] Player joined
+[2026-01-27 01:05:43] MOVE: Player j placed X at 0,0
+[2026-01-27 01:05:49] MOVE: Player s placed O at 5,5
+[2026-01-27 01:05:55] MOVE: Player d placed # at 4,5
+[2026-01-27 01:06:13] MOVE: Player q placed @ at 3,5
+[2026-01-27 01:06:20] MOVE: Player s placed $ at 3,3
+[2026-01-27 01:06:28] MOVE: Player j placed X at 0,1
+[2026-01-27 01:06:36] MOVE: Player s placed O at 4,1
+[2026-01-27 01:06:42] MOVE: Player d placed # at 3,1
+[2026-01-27 01:06:48] MOVE: Player q placed @ at 5,1
+[2026-01-27 01:06:57] MOVE: Player s placed $ at 5,2
+[2026-01-27 01:07:03] MOVE: Player j placed X at 0,2
+[2026-01-27 01:07:09] MOVE: Player s placed O at 2,1
+[2026-01-27 01:07:16] MOVE: Player d placed # at 1,5
+[2026-01-27 01:07:25] MOVE: Player q placed @ at 2,0
+[2026-01-27 01:07:44] MOVE: Player s placed $ at 4,0
+[2026-01-27 01:07:51] MOVE: Player j placed X at 0,3
+[2026-01-27 01:07:51] GAME: We have a winner!
+[2026-01-27 01:07:51] PERSISTENCE: Saved score for j. Total scores in memory: 4
+[2026-01-27 01:07:56] GAME: Board reset.
