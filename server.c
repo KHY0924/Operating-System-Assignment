@@ -15,7 +15,25 @@ int server_fd;
 int port = PORT;
 
 // --- Helper Functions ---
+
+// Error logging function - writes to error.log
+void log_error(const char *func_name, const char *msg) {
+    FILE *err_log = fopen("error.log", "a");
+    if (err_log) {
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        char timeStr[64];
+        strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", t);
+        fprintf(err_log, "[%s] ERROR in %s: %s\n", timeStr, func_name, msg);
+        fflush(err_log);
+        fclose(err_log);
+    }
+    // Also print to stderr for visibility
+    fprintf(stderr, "[ERROR] %s: %s\n", func_name, msg);
+}
+
 void error_exit(const char *msg) {
+    log_error("FATAL", msg);
     perror(msg);
     exit(EXIT_FAILURE);
 }
@@ -56,6 +74,7 @@ void *logger_thread_func(void *arg) {
     printf("[Logger Thread] Started.\n");
     FILE *logFile = fopen("game.log", "a");
     if (!logFile) {
+        log_error("logger_thread_func", "Failed to open game.log for writing");
         perror("Failed to open game.log");
         return NULL;
     }
@@ -99,8 +118,10 @@ void load_scores() {
     shm_ptr->num_scores = 0;
     FILE *fp = fopen("scores.txt", "r");
     if (!fp) {
+        log_error("load_scores", "scores.txt not found, creating new file");
         fp = fopen("scores.txt", "w"); // Create if missing
         if(fp) fclose(fp);
+        else log_error("load_scores", "Failed to create scores.txt");
         pthread_mutex_unlock(&shm_ptr->game_mutex);
         return;
     }
@@ -153,6 +174,7 @@ void save_score(const char *player_name, int add_win) {
         fclose(fp);
         printf("[Score Debug] Successfully wrote %d scores to scores.txt\n", shm_ptr->num_scores);
     } else {
+        log_error("save_score", "Failed to open scores.txt for writing");
         perror("[Score Debug] Failed to open scores.txt for writing");
     }
     
@@ -171,6 +193,8 @@ void save_all_scores() {
             fprintf(fp, "%s %d\n", shm_ptr->high_scores[i].name, shm_ptr->high_scores[i].wins);
         }
         fclose(fp);
+    } else {
+        log_error("save_all_scores", "Failed to open scores.txt for writing on shutdown");
     }
     pthread_mutex_unlock(&shm_ptr->game_mutex);
 }
@@ -377,12 +401,21 @@ void *scheduler_thread_func(void *arg) {
 void setup_shared_memory() {
     shm_unlink(SHM_NAME);
     server_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
-    if (server_fd == -1) error_exit("shm_open");
+    if (server_fd == -1) {
+        log_error("setup_shared_memory", "shm_open failed - cannot create shared memory");
+        error_exit("shm_open");
+    }
 
-    if (ftruncate(server_fd, sizeof(SharedState)) == -1) error_exit("ftruncate");
+    if (ftruncate(server_fd, sizeof(SharedState)) == -1) {
+        log_error("setup_shared_memory", "ftruncate failed - cannot resize shared memory");
+        error_exit("ftruncate");
+    }
 
     shm_ptr = mmap(NULL, sizeof(SharedState), PROT_READ | PROT_WRITE, MAP_SHARED, server_fd, 0);
-    if (shm_ptr == MAP_FAILED) error_exit("mmap");
+    if (shm_ptr == MAP_FAILED) {
+        log_error("setup_shared_memory", "mmap failed - cannot map shared memory");
+        error_exit("mmap");
+    }
 
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
@@ -391,10 +424,18 @@ void setup_shared_memory() {
     pthread_mutex_init(&shm_ptr->game_mutex, &attr);
     pthread_mutex_init(&shm_ptr->log_mutex, &attr);
     
-    if (sem_init(&shm_ptr->sched_sem, 1, 0) == -1) error_exit("sem_init sched");
+    if (sem_init(&shm_ptr->sched_sem, 1, 0) == -1) {
+        log_error("setup_shared_memory", "sem_init for scheduler semaphore failed");
+        error_exit("sem_init sched");
+    }
     
     for(int i=0; i<MAX_PLAYERS; i++) {
-        if (sem_init(&shm_ptr->turn_sem[i], 1, 0) == -1) error_exit("sem_init turn");
+        if (sem_init(&shm_ptr->turn_sem[i], 1, 0) == -1) {
+            char err_msg[64];
+            snprintf(err_msg, 64, "sem_init for turn_sem[%d] failed", i);
+            log_error("setup_shared_memory", err_msg);
+            error_exit("sem_init turn");
+        }
     }
 
     pthread_mutexattr_destroy(&attr);
@@ -528,6 +569,9 @@ void handle_client(int socket_fd, int player_id) {
             while (!valid) {
                 memset(buffer, 0, BUFFER_SIZE);
                 if (read(socket_fd, buffer, BUFFER_SIZE) <= 0) {
+                     char err_msg[128];
+                     snprintf(err_msg, 128, "Client dropped during turn - Player %d (socket_fd=%d)", player_id, socket_fd);
+                     log_error("handle_client", err_msg);
                      enqueue_log("DISCONNECT: Client dropped during turn.");
                      
                      // Restore Drop Logic
@@ -642,6 +686,9 @@ void handle_client(int socket_fd, int player_id) {
         while (!valid) {
             memset(buffer, 0, BUFFER_SIZE);
             if (read(socket_fd, buffer, BUFFER_SIZE) <= 0) {
+                 char err_msg[128];
+                 snprintf(err_msg, 128, "Client dropped during turn - Player %d (socket_fd=%d)", player_id, socket_fd);
+                 log_error("handle_client", err_msg);
                  enqueue_log("DISCONNECT: Client dropped during turn.");
                  
                  // Restore Drop Logic
@@ -774,17 +821,31 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in address;
     int addrlen = sizeof(address);
 
-    if ((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) error_exit("socket failed");
+    if ((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        log_error("main", "socket() failed - cannot create listening socket");
+        error_exit("socket failed");
+    }
     
     int opt = 1;
-    if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) error_exit("setsockopt");
+    if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+        log_error("main", "setsockopt() failed - cannot set socket options");
+        error_exit("setsockopt");
+    }
 
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(port);
 
-    if (bind(listen_fd, (struct sockaddr *)&address, sizeof(address)) < 0) error_exit("bind failed");
-    if (listen(listen_fd, MAX_PLAYERS) < 0) error_exit("listen");
+    if (bind(listen_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        char err_msg[64];
+        snprintf(err_msg, 64, "bind() failed on port %d - Address may be in use", port);
+        log_error("main", err_msg);
+        error_exit("bind failed");
+    }
+    if (listen(listen_fd, MAX_PLAYERS) < 0) {
+        log_error("main", "listen() failed - cannot start listening");
+        error_exit("listen");
+    }
 
     printf("[Server] Waiting for connections...\n");
 
@@ -832,6 +893,7 @@ int main(int argc, char *argv[]) {
                      handle_client(new_socket, id);
                      exit(0);
                  } else if (pid < 0) {
+                     log_error("main", "fork() failed - cannot create child process for client");
                      perror("Fork failed");
                  } else {
                      // Parent
