@@ -13,6 +13,7 @@ void error_exit_client(const char *msg) {
 void clear_screen() {
     // Standard ANSI escape sequence to clear screen
     printf("\033[H\033[J");
+    fflush(stdout);
 }
 
 void print_header() {
@@ -67,10 +68,16 @@ void print_board_pretty(char *boardStr) {
 int main(int argc, char *argv[]) {
     struct sockaddr_in serv_addr;
     char buffer[BUFFER_SIZE];
+    int intro_shown = 0;
+
     
     // UI: Introduction
-    clear_screen();
-    print_header();
+    if (!intro_shown) {
+        clear_screen();
+        print_header();
+        intro_shown = 1;
+    }
+
 
     if ((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         error_exit_client("Socket creation error");
@@ -104,6 +111,12 @@ int main(int argc, char *argv[]) {
         char name[32];
         printf("\nENTER YOUR NAME: ");
     scanf("%s", name);
+
+    /* clear leftover newline */
+    int ch;
+    while ((ch = getchar()) != '\n' && ch != EOF);
+
+    
     send(sock_fd, name, strlen(name), 0);
     } // End of WELCOME check
 
@@ -156,7 +169,7 @@ int main(int argc, char *argv[]) {
         
         if (valread <= 0) {
             printf("\n[!] Disconnected from server.\n");
-            break;
+            return 0;
         }
 
         // Protocol Handling
@@ -164,15 +177,19 @@ int main(int argc, char *argv[]) {
             clear_screen();
             print_header();
             printf("\n\n    🏆 VICTORY! You won the game! 🏆\n\n");
-            break;
+            return 0;
         }
         else if (strstr(buffer, MSG_LOSE)) {
+            clear_screen();
+            print_header();
             printf("\n\n    💀 GAME OVER. You lost. 💀\n\n");
-            break;
+            return 0;
         }
         else if (strstr(buffer, MSG_DRAW)) {
+            clear_screen();
+            print_header();
             printf("\n\n    🤝 DRAW GAME. No winner. 🤝\n\n");
-            break;
+            return 0;
         }
         else if (strstr(buffer, MSG_YOUR_TURN)) {
             waiting_message_shown = 0; // Reset for next time
@@ -230,6 +247,7 @@ int main(int argc, char *argv[]) {
                          return 0;
                      } 
                      else if (strstr(buffer, MSG_DRAW)) {
+                         clear_screen();
                          printf("\n\n    🤝 DRAW GAME. No winner. 🤝\n\n");
                          close(sock_fd);
                          return 0;
