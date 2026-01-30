@@ -20,6 +20,25 @@ void print_header() {
     printf("\n=========================================\n");
     printf("      MEGA TIC-TAC-TOE (Networked)       \n");
     printf("=========================================\n");
+    fflush(stdout);
+}
+
+void print_credits() {
+    clear_screen();
+    printf("\n=========================================\n");
+    printf("             GAME OVER                  \n");
+    printf("=========================================\n");
+    printf("\n          --- CREDITS ---              \n");
+    printf("      Developed for OS Assignment      \n");
+    printf("             Team Members              \n");
+    printf("    Member 1: Server Core / IPC        \n");
+    printf("    Member 2: Scheduler / Game Logic   \n");
+    printf("    Member 3: Concurrent Logger        \n");
+    printf("    Member 4: CLI / Persistence        \n");
+    printf("\n=========================================\n");
+    printf("      Thank you for playing!           \n");
+    printf("=========================================\n");
+    fflush(stdout);
 }
 
 void print_board_pretty(char *boardStr) {
@@ -60,6 +79,7 @@ void print_board_pretty(char *boardStr) {
         }
 
         printf("\n  +---+---+---+---+---+---+\n");
+        fflush(stdout);
         row++;
         line = strtok_r(NULL, "\n", &line_ctx);
     }
@@ -71,8 +91,9 @@ int main(int argc, char *argv[]) {
     int intro_shown = 0;
 
     
-    // UI: Introduction
-    if (!intro_shown) {
+    // UI: Introduction - Toggle to prevent duplicate display
+    int show_header_at_start = 1;
+    if (show_header_at_start && !intro_shown) {
         clear_screen();
         print_header();
         intro_shown = 1;
@@ -109,16 +130,27 @@ int main(int argc, char *argv[]) {
     // 2. Send Name
     if (strncmp(buffer, "WELCOME", 7) == 0) {
         char name[32];
+        
+        /* Clear any leftover input before name entry */
+        int ch;
+        while ((ch = getchar()) != '\n' && ch != EOF);
+        
         printf("\nENTER YOUR NAME: ");
-    scanf("%s", name);
-
-    /* clear leftover newline */
-    int ch;
-    while ((ch = getchar()) != '\n' && ch != EOF);
-
-    
-    send(sock_fd, name, strlen(name), 0);
+        fflush(stdout);
+        
+        if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
+            // Remove newline
+            buffer[strcspn(buffer, "\n")] = 0;
+            strncpy(name, buffer, 31);
+            name[31] = '\0';
+        } else {
+            strcpy(name, "Guest");
+        }
+        
+        send(sock_fd, name, strlen(name), 0);
     } // End of WELCOME check
+
+    /* clear leftover newline - NO LONGER NEEDED as we used fgets and pre-cleared */
 
     printf("\n[*] Waiting for other players to join...\n");
     
@@ -177,18 +209,27 @@ int main(int argc, char *argv[]) {
             clear_screen();
             print_header();
             printf("\n\n    🏆 VICTORY! You won the game! 🏆\n\n");
+            fflush(stdout);
+            sleep(10);
+            print_credits();
             return 0;
         }
         else if (strstr(buffer, MSG_LOSE)) {
             clear_screen();
             print_header();
             printf("\n\n    💀 GAME OVER. You lost. 💀\n\n");
+            fflush(stdout);
+            sleep(10);
+            print_credits();
             return 0;
         }
         else if (strstr(buffer, MSG_DRAW)) {
             clear_screen();
             print_header();
             printf("\n\n    🤝 DRAW GAME. No winner. 🤝\n\n");
+            fflush(stdout);
+            sleep(10);
+            print_credits();
             return 0;
         }
         else if (strstr(buffer, MSG_YOUR_TURN)) {
@@ -243,12 +284,19 @@ int main(int argc, char *argv[]) {
                          clear_screen();
                          print_header();
                          printf("\n\n    🏆 VICTORY! You won the game! 🏆\n\n");
+                         fflush(stdout);
+                         sleep(10);
+                         print_credits();
                          close(sock_fd);
                          return 0;
                      } 
                      else if (strstr(buffer, MSG_DRAW)) {
                          clear_screen();
+                         print_header();
                          printf("\n\n    🤝 DRAW GAME. No winner. 🤝\n\n");
+                         fflush(stdout);
+                         sleep(10);
+                         print_credits();
                          close(sock_fd);
                          return 0;
                      }
