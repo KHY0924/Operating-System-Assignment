@@ -1,0 +1,12 @@
+[2026-01-27 01:27:11] ERROR: Server startup - shm_open failed: Permission denied
+[2026-01-27 01:27:12] ERROR: Socket creation failed - socket() returned -1, errno=24 (Too many open files)
+[2026-01-27 01:27:15] ERROR: bind() failed on port 8888 - Address already in use
+[2026-01-27 01:27:20] ERROR: Client connection dropped unexpectedly - Player 2 (socket_fd=6)
+[2026-01-27 01:27:25] ERROR: Invalid move received - Player 1 sent malformed data: "abc xyz"
+[2026-01-27 01:27:30] ERROR: Semaphore timeout - Player 3 failed to respond within 30 seconds
+[2026-01-27 01:27:35] ERROR: Memory allocation failed - Unable to expand log queue buffer
+[2026-01-27 01:27:40] ERROR: File I/O error - Failed to write to scores.txt: Disk full
+[2026-01-27 01:27:45] ERROR: pthread_mutex_lock failed - EDEADLK detected in game_mutex
+[2026-01-27 01:27:50] ERROR: Network timeout - Player 4 connection timed out during game
+[2026-01-27 01:27:55] ERROR: Invalid board state detected - Position [5][5] already occupied
+[2026-01-27 01:28:00] ERROR: fork() failed - Cannot create child process: Resource temporarily unavailable
